@@ -1,0 +1,26 @@
+{
+  "total_count": 56402,
+  "duration_minutes": 186.7,
+  "peak_minute": 43,
+  "peak_count_per_minute": 657,
+  "avg_count_per_minute": 302.1,
+  "peak_danmus": [
+    "右下角能不能小点声啊",
+    "呃呃",
+    "唐",
+    "[阿梓收藏集表情包_崇拜]",
+    "你是小星星吗，女水友"
+  ],
+  "start_ts": 1780919532519,
+  "end_ts": 1780930735057,
+  "file_stats": [
+    {
+      "file": "p1.txt",
+      "count": 19878
+    },
+    {
+      "file": "p2.txt",
+      "count": 36524
+    }
+  ]
+}
