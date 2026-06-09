@@ -901,6 +901,7 @@ function renderAll(r) {
 
   // 渲染图表（延迟确保DOM就绪）
   setTimeout(() => {
+    try {
     renderTimeline(r);
     renderWordcloud(r);
     renderEmotion(r);
@@ -929,6 +930,10 @@ function renderAll(r) {
         }, 600 + i * 80);
       });
     }, 300);
+    } catch(err) {
+      console.error('渲染图表时发生错误：', err);
+      alert('图表渲染失败：' + err.message + '\n\n请尝试刷新页面后重新上传。如问题持续，请检查浏览器控制台获取详细错误信息。');
+    }
   }, 120);
 
   // 滚动到结果区
@@ -1242,16 +1247,16 @@ function renderRadar(r) {
   const total = r.total;
   const top20val = r.topMessages.slice(0,20).reduce((s,d)=>s+d.count,0);
   const callRatio = Math.min(100, Math.round(
-    (r.emotionCounts.find(c=>c.name==='等待呼唤')?.count||0) / total * 100 * 4
+    ((r.emotionCounts.find(c=>c.name==='陪伴')?.count||0) + (r.emotionCounts.find(c=>c.name==='疑问')?.count||0)) / total * 100 * 4
   ));
   const intensityRatio = Math.round(
-    (r.emotionCounts.filter(c=>['激动欢呼','感慨伤感'].includes(c.name)).reduce((s,d)=>s+d.count,0)) / total * 100 * 3
+    (r.emotionCounts.filter(c=>['欢呼','感慨'].includes(c.name)).reduce((s,d)=>s+d.count,0)) / total * 100 * 3
   );
   const memeRatio = Math.round(
-    (r.emotionCounts.find(c=>c.name==='调侃搞笑')?.count||0) / total * 100 * 5
+    ((r.emotionCounts.find(c=>c.name==='调侃')?.count||0) + (r.emotionCounts.find(c=>c.name==='玩梗')?.count||0)) / total * 100 * 5
   );
   const cheerRatio = Math.min(100, Math.round(
-    (r.emotionCounts.find(c=>c.name==='应援口号')?.count||0) / total * 100 * 6
+    (r.emotionCounts.find(c=>c.name==='应援')?.count||0) / total * 100 * 6
   ));
   const paceRatio = Math.min(100, Math.round(r.peakVal / Math.max(r.avgVal,1) * 25));
 
@@ -1309,7 +1314,7 @@ function renderSegmentSummary(r) {
     return;
   }
   const intervalMin = 5;
-  let maxMin = Math.max(...r.allDanmus.map(d => d.m), 0);
+  let maxMin = maxOfArray(r.allDanmus.map(d => d.m)) || 0;
   // 如果所有弹幕的分钟都是0（解析失败），用弹幕总数估算
   if (maxMin === 0) {
     maxMin = Math.ceil(r.allDanmus.length / 300) * 1; // 假设约300条/分钟
@@ -1440,7 +1445,7 @@ function renderScatterPlot(r) {
     '陪伴': { color: '#87CEEB', emoji: '⏳', order: 1 }, '其他': { color: '#8AABDD', emoji: '💬', order: 0 }
   };
 
-  const maxMin = Math.max(...allDanmus.map(d => d.m), 1);
+  const maxMin = maxOfArray(allDanmus.map(d => d.m)) || 1;
   const totalPoints = allDanmus.length;
   const maxPerSeries = 800;
 
