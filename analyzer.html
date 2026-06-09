@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>弹幕分析器 · 星瞳五周年演唱会RE弹幕可视化</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --c-primary:#4A9EFF;--c-light:#B3D9FF;--c-pink:#FFD1EC;--c-bg:#060C22;
+  --c-card:rgba(10,22,60,0.7);--c-border:rgba(74,158,255,0.2);
+  --c-text:#DCF0FF;--c-muted:rgba(160,200,255,0.55);--r:18px;--r-sm:10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;background:var(--c-bg);color:var(--c-text);min-height:100vh;overflow-x:hidden;position:relative}
+
+/* ====== Canvas 星空背景 ====== */
+#starCanvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.page-content{position:relative;z-index:1}
+
+/* ====== 导航栏 ====== */
+.navbar{position:fixed;top:0;left:0;right:0;z-index:100;padding:12px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(6,12,34,0.7);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-bottom:1px solid rgba(74,158,255,0.1);transition:all .35s}
+.navbar.scrolled{background:rgba(6,12,34,0.9);box-shadow:0 4px 32px rgba(74,158,255,0.08)}
+.logo{font-size:1rem;font-weight:900;background:linear-gradient(135deg,#FFFFFF,var(--c-light),var(--c-primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:flex;align-items:center;gap:8px}
+.logo-star{font-size:1.2rem;animation:pulse-glow 2s ease-in-out infinite}
+@keyframes pulse-glow{0%,100%{filter:drop-shadow(0 0 4px rgba(74,158,255,0.4))}50%{filter:drop-shadow(0 0 14px rgba(74,158,255,0.8))}}
+.back-link{color:var(--c-muted);text-decoration:none;font-size:.84rem;transition:color .2s;display:flex;align-items:center;gap:6px}
+.back-link:hover{color:var(--c-primary)}
+
+/* ====== 主内容 ====== */
+main{max-width:1320px;margin:0 auto;padding:90px 28px 48px}
+
+/* ====== Hero ====== */
+.hero-section{text-align:center;padding:36px 0 20px}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 18px;border-radius:24px;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.2);font-size:.76rem;color:var(--c-light);margin-bottom:16px}
+.hero-title{font-size:1.8rem;font-weight:900;background:linear-gradient(135deg,#FFFFFF,var(--c-light),var(--c-primary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.hero-sub{font-size:.88rem;color:var(--c-muted)}
+
+/* ====== 上传区域 ====== */
+.upload-container{margin:28px auto 36px;max-width:720px}
+.upload-zone{border:2px dashed rgba(74,158,255,0.3);border-radius:var(--r);padding:50px 24px;text-align:center;
+  transition:all .35s;cursor:pointer;background:rgba(74,158,255,0.02);
+  position:relative;overflow:hidden}
+.upload-zone::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(74,158,255,0.06) 0%,transparent 70%);opacity:0;transition:opacity .35s}
+.upload-zone.dragover,.upload-zone:hover{border-color:var(--c-primary);background:rgba(74,158,255,0.06);box-shadow:0 0 48px rgba(74,158,255,0.12)}
+.upload-zone.dragover::before,.upload-zone:hover::before{opacity:1}
+.upload-icon{font-size:3.2rem;margin-bottom:12px;position:relative;z-index:1;
+  animation:float-updown 2.5s ease-in-out infinite}
+@keyframes float-updown{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.upload-text{font-size:1rem;color:var(--c-light);position:relative;z-index:1}
+.upload-hint{font-size:.74rem;color:rgba(160,200,255,0.3);margin-top:10px;position:relative;z-index:1}
+#fileInput{display:none}
+
+/* 拖拽亮点 */
+.upload-features{display:flex;justify-content:center;gap:32px;margin-top:20px;flex-wrap:wrap}
+.upload-feature{display:flex;align-items:center;gap:7px;font-size:.74rem;color:rgba(160,200,255,0.35)}
+.upload-feature-icon{font-size:.9rem}
+
+/* ====== 进度动画 ====== */
+.processing-overlay{display:none;position:fixed;inset:0;background:rgba(6,12,34,0.85);z-index:200;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+.processing-overlay.active{display:flex}
+.processing-spinner{width:48px;height:48px;border:3px solid rgba(74,158,255,0.15);border-top-color:var(--c-primary);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.processing-text{color:var(--c-light);font-size:.95rem;font-weight:700}
+
+/* ====== 状态栏 ====== */
+.status-bar{display:none;flex-wrap:wrap;gap:12px;align-items:center;padding:16px 22px;
+  background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r-sm);
+  margin-bottom:28px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  animation:fadeInUp .5s ease both}
+.status-file{font-size:.88rem;flex:1;min-width:180px;color:var(--c-light)}
+.badge{padding:4px 14px;border-radius:20px;font-size:.74rem;font-weight:700;border:1px solid}
+.badge-ok{color:#52C41A;border-color:rgba(82,196,26,0.4);background:rgba(82,196,26,0.08)}
+.badge-warn{color:#FFD700;border-color:rgba(255,215,0,0.4);background:rgba(255,215,0,0.08)}
+.badge-info{color:var(--c-primary);border-color:var(--c-border);background:rgba(74,158,255,0.08)}
+.badge-accent{color:var(--c-pink);border-color:rgba(255,209,236,0.3);background:rgba(255,209,236,0.06)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border-radius:24px;border:1px solid var(--c-border);background:rgba(74,158,255,0.1);color:var(--c-light);font-family:inherit;font-size:.83rem;font-weight:700;cursor:pointer;transition:all .25s;white-space:nowrap}
+.btn:hover{background:rgba(74,158,255,0.22);border-color:rgba(74,158,255,0.45);color:#fff;transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(135deg,rgba(74,158,255,0.35),rgba(74,158,255,0.15));border-color:rgba(74,158,255,0.5);color:#fff}
+.btn-primary:hover{background:linear-gradient(135deg,rgba(74,158,255,0.5),rgba(74,158,255,0.25))}
+.btn-sm{padding:5px 14px;font-size:.72rem}
+
+/* ====== 统计卡片行 ====== */
+.stats-row{display:none;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:28px;animation:fadeInUp .5s ease .1s both}
+.stat-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r-sm);padding:16px 20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.stat-card::before{content:'';display:block;width:24px;height:2px;background:var(--c-primary);border-radius:1px;margin-bottom:8px;opacity:.5}
+.stat-label{font-size:.72rem;color:var(--c-muted);margin-bottom:4px}
+.stat-value{font-size:1.55rem;font-weight:900;color:var(--c-light);transition:color .3s}
+.stat-value.counted{color:var(--c-primary)}
+
+/* ====== 图表分区布局 v4 ====== */
+.section-divider{display:none;height:1px;background:linear-gradient(90deg,transparent,rgba(74,158,255,0.18),transparent);margin:44px 0 36px;position:relative}
+.section-divider::after{content:'✦';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:rgba(74,158,255,0.3);font-size:.5rem;background:var(--c-bg);padding:0 10px}
+.chart-section{display:none;margin-bottom:52px;animation:fadeInUp .55s ease both}
+.chart-section:last-child{margin-bottom:0}
+.section-anchor{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.section-anchor-line{width:32px;height:2.5px;border-radius:2px;background:linear-gradient(90deg,var(--c-primary),rgba(74,158,255,0.2));flex-shrink:0;box-shadow:0 0 12px rgba(74,158,255,0.3)}
+.section-anchor-tag{font-size:.66rem;font-weight:700;color:rgba(160,200,255,0.35);text-transform:uppercase;letter-spacing:.12em}
+.section-anchor-title{font-size:1.08rem;font-weight:900;color:var(--c-light);display:flex;align-items:center;gap:10px}
+.section-anchor-title .emoji{font-size:1.3rem;animation:pulse-glow 3s ease-in-out infinite}
+.section-anchor-title .count{font-size:.7rem;color:rgba(160,200,255,0.3);font-weight:400;margin-left:auto}
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.chart-panel{
+  background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);padding:24px;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  position:relative;overflow:hidden;
+  transition:transform .3s cubic-bezier(.22,.61,.36,1),box-shadow .3s, border-color .3s;
+  opacity:0;transform:translateY(30px);
+}
+.chart-panel.entered{opacity:1;transform:translateY(0)}
+.chart-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(74,158,255,0.35),transparent)}
+.chart-panel::after{content:'';position:absolute;inset:0;border-radius:var(--r);background:radial-gradient(ellipse at 30% 0%,rgba(74,158,255,0.04) 0%,transparent 60%);pointer-events:none;opacity:0;transition:opacity .4s}
+.chart-panel:hover{transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,0.25);border-color:rgba(74,158,255,0.35)}
+.chart-panel:hover::after{opacity:1}
+.chart-panel.full{grid-column:1/-1}
+.chart-ht{font-weight:800;font-size:.95rem;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.chart-ht .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-primary);box-shadow:0 0 6px var(--c-primary);animation:dotBreathe 2s ease-in-out infinite}
+@keyframes dotBreathe{0%,100%{box-shadow:0 0 4px var(--c-primary)}50%{box-shadow:0 0 14px var(--c-primary),0 0 24px rgba(74,158,255,0.4)}}
+.chart-sub{font-size:.72rem;color:var(--c-muted);margin-bottom:18px}
+.chart-wrap{width:100%;height:380px}
+.chart-wrap.short{height:300px}
+.chart-wrap.tall{height:440px}
+
+/* 分析原理框 */
+.principle-box{margin-top:14px;padding:12px 16px;border-radius:8px;background:rgba(74,158,255,0.04);border:1px solid rgba(74,158,255,0.08);font-size:.7rem;color:rgba(160,200,255,0.45);line-height:1.7;position:relative;overflow:hidden}
+.principle-box::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--c-primary),transparent);border-radius:1px;opacity:.3}
+
+/* ====== Top列表 ====== */
+.top-list{display:flex;flex-direction:column;gap:5px;max-height:390px;overflow-y:auto}
+.top-item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;background:rgba(74,158,255,0.03);border:1px solid rgba(74,158,255,0.05);transition:all .2s;animation:listSlideIn .4s ease both}
+.top-item:nth-child(1){animation-delay:0s}.top-item:nth-child(2){animation-delay:.03s}.top-item:nth-child(3){animation-delay:.06s}
+.top-item:nth-child(4){animation-delay:.09s}.top-item:nth-child(5){animation-delay:.12s}
+.top-item:hover{background:rgba(74,158,255,0.1);transform:translateX(3px)}
+.top-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:800;flex-shrink:0}
+.rank-1{background:linear-gradient(135deg,#FFD700,#FFA500);color:#000}
+.rank-2{background:linear-gradient(135deg,#C8D8E8,#A0B0C0);color:#000}
+.rank-3{background:linear-gradient(135deg,#CD7F32,#A0522D);color:#fff}
+.rank-n{background:rgba(74,158,255,0.15);color:var(--c-light)}
+.top-msg{flex:1;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top-count{font-size:.74rem;color:var(--c-primary);font-weight:800;min-width:40px;text-align:right}
+
+/* ====== 时间筛选按钮组 ====== */
+.filter-group{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.filter-btn{padding:5px 14px;border-radius:16px;border:1px solid rgba(74,158,255,0.15);background:rgba(74,158,255,0.05);color:var(--c-muted);font-size:.74rem;font-family:inherit;cursor:pointer;transition:all .2s}
+.filter-btn:hover,.filter-btn.active{border-color:rgba(74,158,255,0.4);background:rgba(74,158,255,0.15);color:var(--c-light)}
+
+/* ====== 洞察区 ====== */
+.insight-row{display:none;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:28px;animation:fadeInUp .5s ease .2s both}
+.insight-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r-sm);padding:18px 20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);transition:all .2s}
+.insight-card:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,0.2);border-color:rgba(74,158,255,0.3)}
+.insight-icon{font-size:1.4rem;margin-bottom:8px}
+.insight-title{font-size:.74rem;color:var(--c-muted);margin-bottom:4px}
+.insight-value{font-size:1rem;font-weight:900;color:var(--c-light)}
+
+/* ====== 页脚 ====== */
+footer{text-align:center;padding:36px 24px;color:rgba(160,200,255,0.22);font-size:.7rem;border-top:1px solid rgba(74,158,255,0.06);margin-top:48px}
+
+/* ====== 动画 ====== */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeInScale{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@keyframes listSlideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes cardEnter{to{opacity:1;transform:translateY(0)}}
+.fade-in-up{opacity:0;transform:translateY(20px);transition:opacity .5s ease,transform .5s ease}
+.fade-in-up.visible{opacity:1;transform:translateY(0)}
+/* 统计卡片数字跳动 */
+@keyframes countPop{0%{transform:scale(1)}50%{transform:scale(1.12);color:var(--c-primary)}100%{transform:scale(1)}}
+.stat-value.pop{animation:countPop .6s ease}
+
+/* ====== 响应式 ====== */
+@media(max-width:768px){
+  .charts-grid{grid-template-columns:1fr}
+  .stats-row,.insight-row{grid-template-columns:repeat(2,1fr)}
+  .chart-wrap,.chart-wrap.short,.chart-wrap.tall{height:300px}
+  .hero-title{font-size:1.3rem}
+  .navbar{padding:10px 16px}
+  main{padding:80px 14px 32px}
+  .upload-features{gap:16px}
+  .chart-section{margin-bottom:36px}
+  .section-anchor-title{font-size:.95rem}
+}
+
+/* ====== 分享海报按钮 ====== */
+.share-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 20px; border-radius: 24px;
+  border: 1px solid var(--c-border);
+  background: rgba(74,158,255,0.1);
+  color: var(--c-light); font-family: inherit;
+  font-size: .83rem; font-weight: 700; cursor: pointer;
+  transition: all .25s; white-space: nowrap;
+}
+.share-btn:hover {
+  background: rgba(74,158,255,0.22);
+  border-color: rgba(74,158,255,0.45);
+  color: #fff; transform: translateY(-1px);
+}
+
+/* ====== 海报弹窗 ====== */
+.poster-modal {
+  display: none; position: fixed; inset: 0;
+  z-index: 10000; background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  justify-content: center; align-items: center; flex-direction: column; gap: 20px;
+}
+.poster-modal.active { display: flex; animation: fadeIn .3s ease; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.poster-canvas-wrap {
+  position: relative; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 0 60px rgba(74,158,255,0.2), 0 24px 80px rgba(0,0,0,0.5);
+  border: 1px solid rgba(74,158,255,0.25);
+}
+.poster-canvas-wrap canvas { display: block; max-width: 90vw; height: auto; }
+
+.poster-actions {
+  display: flex; gap: 14px; align-items: center;
+}
+
+.poster-close {
+  position: absolute; top: 20px; right: 20px;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.5);
+  color: #fff; font-size: 1.2rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s; z-index: 10001;
+}
+.poster-close:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
+
+.poster-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 12px 28px; border-radius: 30px; border: 1.5px solid rgba(74,158,255,0.4);
+  background: linear-gradient(135deg, rgba(74,158,255,0.35), rgba(74,158,255,0.1));
+  color: #fff; font-family: inherit; font-size: .9rem; font-weight: 700;
+  cursor: pointer; transition: all .3s;
+}
+.poster-btn:hover {
+  background: linear-gradient(135deg, rgba(74,158,255,0.5), rgba(74,158,255,0.2));
+  box-shadow: 0 0 25px rgba(74,158,255,0.25);
+}
+</style>
+</head>
+<body>
+
+<canvas id="starCanvas"></canvas>
+
+<div class="page-content">
+
+<nav class="navbar" id="navbar">
+  <div class="logo"><span class="logo-star">✦</span>弹幕分析器</div>
+  <a href="index.html" class="back-link">← 返回可视化主页</a>
+</nav>
+
+<main>
+  <!-- Hero -->
+  <section class="hero-section fade-in-up visible">
+    <div class="hero-badge">🔬 自主上传分析</div>
+    <h1 class="hero-title">上传弹幕 · 即时可视化</h1>
+    <p class="hero-sub">纯前端处理，数据不上传任何服务器 — 你的弹幕只有你能看到</p>
+  </section>
+
+  <!-- 上传区 -->
+  <div class="upload-container fade-in-up visible">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div class="upload-icon">📂</div>
+      <div class="upload-text">点击上传 或 拖拽弹幕文件到此处</div>
+      <div class="upload-hint">支持 UTF-8 .txt / .csv · 格式：行号→时间戳:弹幕内容</div>
+    </div>
+    <input type="file" id="fileInput" accept=".txt,.csv,.log,.json" onchange="handleFileSelect(event)" />
+
+    <div class="upload-features">
+      <div class="upload-feature">
+        <span class="upload-feature-icon">🔒</span> 纯前端处理
+      </div>
+      <div class="upload-feature">
+        <span class="upload-feature-icon">⚡</span> 即时分析
+      </div>
+      <div class="upload-feature">
+        <span class="upload-feature-icon">📊</span> 多图表可视化
+      </div>
+      <div class="upload-feature">
+        <span class="upload-feature-icon">💾</span> 可导出结果
+      </div>
+    </div>
+  </div>
+
+  <!-- 处理中蒙层 -->
+  <div class="processing-overlay" id="processingOverlay">
+    <div class="processing-spinner"></div>
+    <div class="processing-text" id="processingText">正在解析弹幕数据…</div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="status-bar" id="statusBar">
+    <span class="status-file" id="statusFile">—</span>
+    <span class="badge badge-info" id="statusCount">— 条</span>
+    <span class="badge badge-info" id="statusDuration">— min</span>
+    <span class="badge badge-ok" id="statusStatus">已加载</span>
+    <button class="btn btn-sm" onclick="resetAnalyzer()" style="margin-left:auto;">↻ 重新分析</button>
+    <button class="btn btn-sm" onclick="openAnalyzerPosterModal()">📸 分享海报</button>
+    <button class="btn btn-sm btn-primary" onclick="exportResult()">📥 导出报告</button>
+  </div>
+
+  <!-- 统计卡片 -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card"><div class="stat-label">💬 总弹幕数</div><div class="stat-value" id="sTotal">—</div></div>
+    <div class="stat-card"><div class="stat-label">⏱️ 直播时长</div><div class="stat-value" id="sDuration">—</div></div>
+    <div class="stat-card"><div class="stat-label">🔥 峰值速率</div><div class="stat-value" id="sPeakVal">—</div></div>
+    <div class="stat-card"><div class="stat-label">📈 平均速率</div><div class="stat-value" id="sAvg">—</div></div>
+    <div class="stat-card"><div class="stat-label">📝 不同弹幕类型</div><div class="stat-value" id="sUnique">—</div></div>
+    <div class="stat-card"><div class="stat-label">⚡ 峰值时刻</div><div class="stat-value" id="sPeakMin">—</div></div>
+  </div>
+
+  <!-- 洞察区 -->
+  <div class="insight-row" id="insightRow">
+    <div class="insight-card"><div class="insight-icon">🏆</div><div class="insight-title">最高频弹幕</div><div class="insight-value" id="iTopMsg">—</div></div>
+    <div class="insight-card"><div class="insight-icon">💙</div><div class="insight-title">主导情感</div><div class="insight-value" id="iTopEmo">—</div></div>
+    <div class="insight-card"><div class="insight-icon">🌊</div><div class="insight-title">情感波动指数</div><div class="insight-value" id="iVariety">—</div></div>
+    <div class="insight-card"><div class="insight-icon">⏱️</div><div class="insight-title">最活跃时段</div><div class="insight-value" id="iActivePeriod">—</div></div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 第一部分：趋势分析                                 -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="chart-section" id="secTrend">
+    <div class="section-anchor">
+      <div class="section-anchor-line"></div>
+      <div class="section-anchor-tag">Section 01</div>
+    </div>
+    <div class="section-anchor-title">
+      <span class="emoji">📈</span> 趋势分析
+      <span class="count">2 项</span>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-panel full">
+        <div class="chart-ht"><span class="dot"></span> 弹幕时间轴</div>
+        <div class="chart-sub">每分钟弹幕数量变化趋势，自动标注弹幕高峰</div>
+        <div class="chart-wrap tall" id="chartTimeline"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：将毫秒级时间戳按分钟分桶（bucket）聚合，形成187分钟时间序列。横轴为直播分钟数，纵轴为该分钟内弹幕总数。通过 markPoint 自动标注全局最高峰与次高峰，markLine 显示平均速率参考线。
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 弹幕速率仪</div>
+        <div class="chart-sub">直播弹幕速率（峰值 vs 平均值）</div>
+        <div class="chart-wrap" id="chartGauge"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：双层仪表盘设计 — 外层指针显示全局峰值速率（每分钟弹幕最大值），内层弧线标记平均速率。刻度根据实际数据范围自适应，颜色分段映射活跃度级别。
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 弹幕活跃热力图</div>
+        <div class="chart-sub">时间 × 密度粒度的弹幕烈度矩阵</div>
+        <div class="chart-wrap" id="chartHeatmap"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：将时间轴按 5 分钟片段切块为行，弹幕数量按密度分档映射颜色。深蓝 = 低活跃，亮蓝白 = 高活跃。视觉上快速定位直播节奏的"热点时段"。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 第二部分：内容分析                                 -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="chart-section" id="secContent">
+    <div class="section-anchor">
+      <div class="section-anchor-line"></div>
+      <div class="section-anchor-tag">Section 02</div>
+    </div>
+    <div class="section-anchor-title">
+      <span class="emoji">☁️</span> 内容分析
+      <span class="count">5 项</span>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 弹幕词云</div>
+        <div class="chart-sub">高频词汇视觉化，字号大小映射出现频次</div>
+        <div class="chart-wrap" id="chartWordcloud"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：对每条弹幕进行中文双字 n-gram 切分 + 英文单词提取，过滤「的/了/是/我」等停用词，统计 Top80 高频词。词云布局使用圆形螺旋算法，字号与词频正比线性映射，颜色按频率分层（高频白 → 低频蓝）。
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 情感分类</div>
+        <div class="chart-sub">9 类情感关键词匹配 + 未分类项</div>
+        <div class="chart-wrap" id="chartEmotion"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：预定义 9 个情感维度（爱意/欢笑/激动/等待/感慨/调侃/应援/赞美/互动），每维度绑定特征关键词列表。逐条弹幕扫描关键词匹配（contains 语义），首条命中即归属该类别。未命中任何关键词的归入「其他」。
+        </div>
+      </div>
+
+      <div class="chart-panel full">
+        <div class="chart-ht"><span class="dot"></span> 情感时间流</div>
+        <div class="chart-sub">各类情感随直播进度的消长变化 · 堆积面积图</div>
+        <div class="chart-wrap" id="chartFlow"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：将每种情感类别的弹幕按 10 分钟桶聚合，叠加为堆积面积图。每层面积 = 该时段该类弹幕的数量。通过观察颜色分层变化，可看出不同情感在直播各阶段的主导地位变迁。
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 弹幕长度分布</div>
+        <div class="chart-sub">短弹幕(≤10字) vs 中弹幕(11-20) vs 长弹幕(21-50) vs 超长弹幕(50+)</div>
+        <div class="chart-wrap" id="chartLengthHist" style="height:320px;"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：统计所有弹幕的<b>字符长度分布</b>，分为4个区间。结合情感标签，可以观察到不同情感倾向的弹幕长度特征。短弹幕多代表快速互动/应援，长弹幕多代表深度评论或感慨。
+        </div>
+      </div>
+
+      <div class="chart-panel full">
+        <div class="chart-ht"><span class="dot"></span> 弹幕浓度散点图</div>
+        <div class="chart-sub">X轴：时间（分钟） · Y轴：弹幕长度 · 颜色：情感类别 · 一图看全貌</div>
+        <div class="chart-wrap" id="chartScatter" style="height:420px;"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：每一条弹幕映射为散点图上的一个点。<b>X轴</b> = 发送时间（分钟），<b>Y轴</b> = 弹幕文本长度（字符数），<b>颜色</b> = 情感分类。可以直观观察：长弹幕集中在哪些时段、不同情感弹幕的时间分布差异。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 第二部分半：智能时段摘要                           -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="chart-section" id="secSummary">
+    <div class="section-anchor">
+      <div class="section-anchor-line"></div>
+      <div class="section-anchor-tag">Section 02.5</div>
+    </div>
+    <div class="section-anchor-title">
+      <span class="emoji">🧠</span> 智能时段摘要 · TF-IDF
+      <span class="count">动态</span>
+    </div>
+    <div class="chart-panel full">
+      <div class="chart-ht"><span class="dot"></span> 时段一句话摘要</div>
+      <div class="chart-sub">将直播按5分钟切片，自动提取每个时段最具代表性的弹幕</div>
+      <div class="summary-grid" id="summaryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:500px;overflow-y:auto;padding:4px;"></div>
+      <div class="principle-box">
+        🔬 <b>分析原理</b>：采用<b>TF-IDF（词频-逆文档频率）</b>算法。将直播按5分钟分割为多个"文档"，计算每个时段内词语的 TF（时段内出现频率）× IDF（全场稀有度）得分。TF-IDF 得分越高的词在该时段越有代表性，取每个时段 Top 3 得分最高的完整弹幕作为摘要。
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 第三部分：排行与文化                               -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="chart-section" id="secRank">
+    <div class="section-anchor">
+      <div class="section-anchor-line"></div>
+      <div class="section-anchor-tag">Section 03</div>
+    </div>
+    <div class="section-anchor-title">
+      <span class="emoji">🏆</span> 排行与文化
+      <span class="count">3 项</span>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> Top 弹幕排行</div>
+        <div class="chart-sub">出现次数最多的 20 条弹幕内容</div>
+        <div class="chart-wrap" id="chartRanking"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：对弹幕文本做精确去重计数（HashMap）。相同字符串（含标点和大小写）视为同一弹幕。按频次降序取 Top20，横柱图中柱长 = 出现次数，右侧标注绝对数值。
+        </div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-ht"><span class="dot"></span> 弹幕排行榜</div>
+        <div class="chart-sub">Top 30 弹幕内容完整列表</div>
+        <div class="top-list" id="topList"></div>
+      </div>
+
+      <div class="chart-panel full">
+        <div class="chart-ht"><span class="dot"></span> 弹幕文化特征</div>
+        <div class="chart-sub">互动度 · 情感强度 · 梗文化 · 应援密度 · 节奏感 — 五维雷达</div>
+        <div class="chart-wrap" id="chartRadar"></div>
+        <div class="principle-box">
+          🔬 <b>分析原理</b>：选取 5 个维度定性弹幕文化特征。各维度通过关键词密度加权计算（如「互动度」= 呼叫词占比 × 100），归一化到 0-100 区间，以雷达多边形展示。面积越大 = 该维度弹幕文化越丰富。
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>✦ 星瞳五周年演唱会RE弹幕分析器 · 纯前端处理，数据不上传服务器</footer>
+
+</div><!-- /page-content -->
+
+<script>
+// ============================================================
+// Canvas 星空背景
+// ============================================================
+function initStars() {
+  const canvas = document.getElementById('starCanvas');
+  const ctx = canvas.getContext('2d');
+  let stars = [], shootingStars = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initParticles();
+  }
+
+  function initParticles() {
+    const count = Math.floor(canvas.width * canvas.height / 1800);
+    stars = Array.from({length: count}, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.6 + 0.4,
+      a: Math.random(),
+      speed: Math.random() * 0.008 + 0.003,
+      phase: Math.random() * Math.PI * 2
+    }));
+  }
+
+  function spawnShootingStar() {
+    shootingStars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height * 0.5,
+      vx: 3 + Math.random() * 4,
+      vy: 1 + Math.random() * 2,
+      life: 1,
+      decay: 0.008 + Math.random() * 0.015,
+      len: 40 + Math.random() * 60
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const t = performance.now() / 1000;
+
+    for (const s of stars) {
+      const flicker = 0.5 + 0.5 * Math.sin(t * s.speed * 10 + s.phase);
+      const alpha = s.a * flicker;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(180,210,255,${alpha})`;
+      ctx.fill();
+    }
+
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+      const ss = shootingStars[i];
+      ss.x += ss.vx;
+      ss.y += ss.vy;
+      ss.life -= ss.decay;
+      if (ss.life <= 0) { shootingStars.splice(i, 1); continue; }
+
+      const grad = ctx.createLinearGradient(ss.x, ss.y, ss.x - ss.vx * ss.len/10, ss.y - ss.vy * ss.len/10);
+      grad.addColorStop(0, `rgba(255,255,255,${ss.life})`);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.beginPath();
+      ctx.moveTo(ss.x, ss.y);
+      ctx.lineTo(ss.x - ss.vx * ss.len/10, ss.y - ss.vy * ss.len/10);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+
+  function animate() {
+    draw();
+    if (Math.random() < 0.008) spawnShootingStar();
+    requestAnimationFrame(animate);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  animate();
+}
+
+// ============================================================
+// 导航栏滚动
+// ============================================================
+function initNavbar() {
+  const navbar = document.getElementById('navbar');
+  window.addEventListener('scroll', () => {
+    navbar.classList.toggle('scrolled', window.scrollY > 60);
+  }, {passive: true});
+}
+
+// ============================================================
+// 全局状态
+// ============================================================
+let analysisResult = null;
+
+// ============================================================
+// 上传交互
+// ============================================================
+const uploadZone = document.getElementById('uploadZone');
+['dragenter','dragover'].forEach(e => {
+  uploadZone.addEventListener(e, ev => { ev.preventDefault(); uploadZone.classList.add('dragover'); });
+});
+['dragleave','drop'].forEach(e => {
+  uploadZone.addEventListener(e, ev => { ev.preventDefault(); uploadZone.classList.remove('dragover'); });
+});
+uploadZone.addEventListener('drop', ev => {
+  const file = ev.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+
+function handleFileSelect(ev) {
+  const file = ev.target.files[0];
+  if (file) processFile(file);
+}
+
+// ============================================================
+// 显示/隐藏处理动画
+// ============================================================
+function showProcessing(msg) {
+  document.getElementById('processingText').textContent = msg || '正在解析弹幕数据…';
+  document.getElementById('processingOverlay').classList.add('active');
+}
+function hideProcessing() {
+  document.getElementById('processingOverlay').classList.remove('active');
+}
+
+// ============================================================
+// 文件处理
+// ============================================================
+function processFile(file) {
+  showProcessing('正在读取文件…');
+  document.getElementById('statusFile').textContent = '📄 ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    showProcessing('正在解析 ' + (file.size/1024).toFixed(0) + ' KB 弹幕数据…');
+    // 给浏览器一帧来渲染蒙层
+    setTimeout(() => {
+      try {
+        const result = analyzeDanmu(e.target.result);
+        hideProcessing();
+        if (!result) return;
+        analysisResult = result;
+        renderAll(result);
+      } catch(err) {
+        hideProcessing();
+        alert('解析发生错误：' + err.message + '\n\n请检查文件格式，或尝试重新导出弹幕文件。');
+        console.error('analyzeDanmu error:', err);
+      }
+    }, 80);
+  };
+  reader.onerror = function() {
+    hideProcessing();
+    alert('文件读取失败，请重试');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ============================================================
+// 分析引擎
+// ============================================================
+function maxOfArray(arr) {
+  if (!arr || arr.length === 0) return 0;
+  let m = arr[0];
+  for (let i = 1; i < arr.length; i++) { if (arr[i] > m) m = arr[i]; }
+  return m;
+}
+
+function analyzeDanmu(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length === 0) { alert('文件为空'); return null; }
+
+  const danmus = [];
+  let parseErrors = 0;
+
+  // 主格式: timestamp:content  (13位毫秒时间戳:弹幕内容)
+  // 兼容格式: index→timestamp:content
+  const primaryPattern = /^(\d{10,13})[:：](.+)$/;  // 时间戳:内容
+  const legacyPattern = /^(\d+)→(\d+)[：:](.+)$/;   // 行号→时间戳:内容
+
+  for (const line of lines) {
+    // 尝试主格式：毫秒时间戳:弹幕内容
+    let m = line.match(primaryPattern);
+    if (m) {
+      const ts = parseInt(m[1]);
+      const text = m[2].trim();
+      if (ts > 1000000000000 && text.length > 0) {
+        danmus.push({ ts: ts, text: text });
+      }
+      // 无论是否成功入库，只要主格式匹配就跳过本行（避免空内容掉到下方被误判）
+      continue;
+    }
+    // 尝试兼容格式：行号→时间戳:弹幕内容
+    m = line.match(legacyPattern);
+    if (m) {
+      danmus.push({ idx: parseInt(m[1]), ts: parseInt(m[2]), text: m[3].trim() });
+      continue;
+    }
+    // 宽松匹配：任何 数字 分隔符 数字 分隔符 内容的格式
+    const loose = line.match(/^(\d+)[→\t, ]+(\d+)[：:](.+)$/);
+    if (loose) {
+      danmus.push({ idx: parseInt(loose[1]), ts: parseInt(loose[2]), text: loose[3].trim() });
+      continue;
+    }
+    // 如果整行看起来不像有效弹幕数据但也不是空白，记录为无时间戳弹幕
+    if (line.length > 1 && line.length < 500) {
+      danmus.push({ ts: 0, text: line.trim() });
+      parseErrors++;
+    }
+  }
+
+  if (danmus.length === 0) {
+    alert('未能从文件中解析出弹幕数据。\n\n请确保每行格式为：行号→时间戳:弹幕内容\n例如：1→1780919532519:开门开门开门');
+    return null;
+  }
+
+  const withTs = danmus.filter(d => d.ts > 0);
+  let timeline = [], duration = 0, minTs = 0, maxTs = 0;
+
+  if (withTs.length > 0) {
+    const timestamps = withTs.map(d => d.ts);
+    // 用循环替代 Math.min/max(...arr) 避免大数组展开导致栈溢出
+    minTs = timestamps[0]; maxTs = timestamps[0];
+    for (let i = 1; i < timestamps.length; i++) {
+      if (timestamps[i] < minTs) minTs = timestamps[i];
+      if (timestamps[i] > maxTs) maxTs = timestamps[i];
+    }
+    duration = (maxTs - minTs) / 60000;
+    const totalMinutes = Math.ceil(duration) + 1;
+
+    const buckets = new Array(totalMinutes).fill(0);
+    for (const d of withTs) {
+      const minute = Math.floor((d.ts - minTs) / 60000);
+      d.minute = minute;
+      if (minute >= 0 && minute < totalMinutes) buckets[minute]++;
+    }
+    timeline = buckets;
+  } else {
+    duration = Math.ceil(danmus.length / 300) * 1;
+    timeline = new Array(Math.ceil(duration)).fill(0);
+    danmus.forEach((_, i) => {
+      const m = Math.floor(i / 300);
+      if (m < timeline.length) timeline[m]++;
+    });
+  }
+
+  // 弹幕频次统计
+  const msgMap = {};
+  for (const d of danmus) {
+    const txt = d.text;
+    msgMap[txt] = (msgMap[txt] || 0) + 1;
+  }
+  const topMessages = Object.entries(msgMap)
+    .map(([content, count]) => ({ content, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 50);
+
+  // 词频（双字n-gram + 英文）
+  const wordMap = {};
+  const chineseChar = /[\u4e00-\u9fff]/;
+  for (const d of danmus) {
+    const chars = [...d.text].filter(c => chineseChar.test(c));
+    for (const ch of chars) wordMap[ch] = (wordMap[ch] || 0) + 1;
+    for (let i = 0; i < chars.length - 1; i++) {
+      const w = chars[i] + chars[i+1];
+      wordMap[w] = (wordMap[w] || 0) + 1;
+    }
+  }
+  const nonChineseWord = /[a-zA-Z0-9]{2,}/g;
+  for (const d of danmus) {
+    const matches = d.text.match(nonChineseWord);
+    if (matches) matches.forEach(w => wordMap[w.toUpperCase()] = (wordMap[w.toUpperCase()] || 0) + 1);
+  }
+
+  const stopWords = new Set(['了','的','是','在','我','有','和','就','不','人','都','一','个','上','也','很','到','说','要','去','你','会','着','没','看','好','自己','什么','这','他','她','它','们','那','来','还','把','让','对','做','但']);
+  const filteredWords = Object.entries(wordMap)
+    .filter(([w, c]) => c >= 3 && !stopWords.has(w) && w.length >= 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 80)
+    .map(([name, value]) => ({ name, value }));
+
+  // 情感分类（统一11类）
+  const emotionCategories = [
+    { name: '爱意', emoji: '💙', color: '#FF8EC8', keywords: ['mua','MUA','妈妈','宝宝','爱你','想你','宝贝','老婆','老公','崽崽','爱了爱了'] },
+    { name: '欢呼', emoji: '🎉', color: '#FF6B6B', keywords: ['啊啊','哇','太帅','绝了','牛','厉害','起飞','芜湖','天哪','wc','赛高'] },
+    { name: '欢笑', emoji: '😄', color: '#FFD700', keywords: ['哈哈','笑死','笑了','hhh','666','草','bushi','嘿嘿','好活','逆天'] },
+    { name: '应援', emoji: '⚔️', color: '#52C41A', keywords: ['一剑开天门','星瞳','加油','冲','应援','周年','小星星','星光','瞳宝宝','瞳姐'] },
+    { name: '感慨', emoji: '😢', color: '#B3D9FF', keywords: ['哭','泪','感动','呜呜','难过','舍不得','泪目','心疼','破防了','哽咽'] },
+    { name: '调侃', emoji: '🎭', color: '#C8B4FF', keywords: ['懒狗','家庭伦理','伦理','母子','开门','窝','嗯哼','蒸蒸日上','小心思','确实'] },
+    { name: '互动', emoji: '👋', color: '#40E0D0', keywords: ['晚上好','早上好','晚安','你好','来了','走了','再见','拜拜','打卡'] },
+    { name: '疑问', emoji: '❓', color: '#FFA500', keywords: ['？','什么','怎么','为啥','为什么','真的假的','啥','哪','是吗','嘛'] },
+    { name: '玩梗', emoji: '🎯', color: '#9370DB', keywords: ['b8fq','加强星瞳','神中神','泰酷辣','抽象','难绷','典中典','差不多得了','凿凿凿','叽叽叽'] },
+    { name: '赞美', emoji: '✨', color: '#FF69B4', keywords: ['好听','好看','美','漂亮','仙女','天使','宝藏','太美','绝美','帅','萌','可爱'] },
+    { name: '陪伴', emoji: '⏳', color: '#87CEEB', keywords: ['一起','陪','等着','期待','还来','常驻','还在','下次','终于','一直都'] }
+  ];
+
+  const emotionCounts = emotionCategories.map(c => ({ ...c, count: 0 }));
+  const emotionTagMap = {}; // name → emotion tag (already short)
+  for (const c of emotionCategories) { emotionTagMap[c.name] = c.name; }
+  let classified = 0;
+
+  for (const d of danmus) {
+    let matched = false;
+    for (const cat of emotionCounts) {
+      for (const kw of cat.keywords) {
+        if (d.text.includes(kw)) { cat.count++; matched = true; d.emotion = emotionTagMap[cat.name] || cat.name; break; }
+      }
+      if (matched) break;
+    }
+    if (!matched) d.emotion = '其他';
+    if (matched) classified++;
+    // 补充无ts弹幕的分钟
+    if (d.minute === undefined) d.minute = 0;
+  }
+  const otherCount = danmus.length - classified;
+
+  const emotionData = emotionCounts
+    .filter(c => c.count > 0)
+    .map(c => ({ name: c.emoji + ' ' + c.name, value: c.count, color: c.color }));
+
+  if (otherCount > 0) {
+    emotionData.push({ name: '💬 其他', value: otherCount, color: 'rgba(74,158,255,0.35)' });
+  }
+
+  // 统计
+  const total = danmus.length;
+  const peakVal = timeline.length > 0 ? maxOfArray(timeline) : 0;
+  const peakMin = timeline.length > 0 ? timeline.indexOf(peakVal) : 0;
+  const avgVal = duration > 0 ? Math.round(total / duration) : 0;
+  const uniqueMsgs = Object.keys(msgMap).length;
+  const dominantEmotion = emotionData.length > 1
+    ? emotionData.filter(d => d.name !== '💬 其他').sort((a,b) => b.value - a.value)[0]
+    : null;
+
+  // 情感波动指数
+  const emotionVariance = emotionData.length > 1
+    ? Math.round((1 - (emotionData.filter(d => d.name !== '💬 其他').reduce((s,d)=>s+d.value,0) / total)) * 100)
+    : 0;
+
+  // 最活跃时段
+  let activeStart = peakMin - 3;
+  let activeEnd = peakMin + 3;
+  if (activeStart < 0) activeStart = 0;
+  if (activeEnd > timeline.length) activeEnd = timeline.length;
+  const activePeriod = '第 ' + activeStart + ' ~ ' + activeEnd + ' 分钟';
+
+  return {
+    total, duration: duration.toFixed(1), peakVal, peakMin,
+    avgVal, uniqueMsgs, timeline, topMessages,
+    wordcloud: filteredWords, emotionData, parseErrors,
+    dominantEmotion, emotionVariance, activePeriod,
+    msgMap, danmus, emotionCategories, emotionCounts,
+    withTs: withTs.length, minTs, maxTs,
+    allDanmus: danmus.map(d => ({ m: d.minute || 0, t: d.text, e: d.emotion || '其他' }))
+  };
+}
+
+// ============================================================
+// 渲染入口
+// ============================================================
+let chartInstances = {};
+
+function renderAll(r) {
+  // 释放旧图表
+  Object.values(chartInstances).forEach(c => c.dispose && c.dispose());
+  chartInstances = {};
+
+  // 显示各区
+  ['statusBar','statsRow','insightRow'].forEach(id => {
+    const e = document.getElementById(id);
+    if(e) e.style.display = id === 'statsRow' || id === 'insightRow' ? 'grid' : 'flex';
+  });
+  // 显示所有图表分区
+  document.querySelectorAll('.chart-section').forEach(s => s.style.display = 'block');
+  // 显示分隔线
+  document.querySelectorAll('.section-divider').forEach(s => s.style.display = 'block');
+
+  document.getElementById('statusCount').textContent = formatNum(r.total) + ' 条';
+  document.getElementById('statusDuration').textContent = r.duration + ' min';
+  document.getElementById('statusStatus').textContent = r.parseErrors > 0 ? '解析（' + r.parseErrors + '行宽松匹配）' : '解析完成';
+
+  // 统计卡片（带动画）
+  animateCounter('sTotal', r.total);
+  document.getElementById('sDuration').textContent = r.duration + ' min';
+  document.getElementById('sPeakVal').textContent = r.peakVal + ' /min';
+  document.getElementById('sAvg').textContent = r.avgVal + ' /min';
+  document.getElementById('sUnique').textContent = formatNum(r.uniqueMsgs);
+  document.getElementById('sPeakMin').textContent = '第 ' + r.peakMin + ' 分钟';
+
+  // 洞察区
+  if (r.topMessages.length > 0) {
+    document.getElementById('iTopMsg').textContent = r.topMessages[0].content + ' (' + formatNum(r.topMessages[0].count) + '次)';
+  }
+  if (r.dominantEmotion) {
+    document.getElementById('iTopEmo').textContent = r.dominantEmotion.name + ' (' + ((r.dominantEmotion.value/r.total*100).toFixed(1)) + '%)';
+  }
+  document.getElementById('iVariety').textContent = r.emotionVariance + '% 未归类';
+  document.getElementById('iActivePeriod').textContent = r.activePeriod;
+
+  // 渲染图表（延迟确保DOM就绪）
+  setTimeout(() => {
+    renderTimeline(r);
+    renderWordcloud(r);
+    renderEmotion(r);
+    renderHeatmap(r);
+    renderRankingChart(r);
+    renderTopList(r);
+    renderGauge(r);
+    renderFlow(r);
+    renderRadar(r);
+    renderSegmentSummary(r);
+    renderLengthHistogram(r);
+    renderScatterPlot(r);
+
+    // 全部图表完成后resize一波 + 交错入场动画
+    setTimeout(() => {
+      Object.values(chartInstances).forEach(c => c.resize && c.resize());
+      // 为每个 chart-panel 添加交错入场动画
+      document.querySelectorAll('.chart-panel').forEach((panel, i) => {
+        panel.style.animationDelay = (i * 0.08) + 's';
+        panel.style.animation = 'cardEnter 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both';
+        panel.style.animationDelay = (i * 0.08) + 's';
+        // 移除旧animation，用新animation替换
+        setTimeout(() => {
+          panel.style.animation = 'none';
+          panel.classList.add('entered');
+        }, 600 + i * 80);
+      });
+    }, 300);
+  }, 120);
+
+  // 滚动到结果区
+  document.getElementById('statusBar').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ============================================================
+// 数字跳动动效
+// ============================================================
+function animateCounter(elId, target, duration=1000) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const start = performance.now();
+  const fn = (now) => {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = formatNum(Math.round(target * eased));
+    if (progress < 1) requestAnimationFrame(fn);
+    else el.classList.add('counted');
+  };
+  requestAnimationFrame(fn);
+}
+
+function formatNum(n) { return n >= 1000 ? (n/1000).toFixed(1).replace('.0','') + 'k' : String(n); }
+const EB = { backgroundColor:'transparent', textStyle:{color:'#B0C8FF',fontFamily:"'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif"} };
+
+// ============================================================
+// 图表渲染函数
+// ============================================================
+
+// --- 时间轴 ---
+function renderTimeline(r) {
+  const chart = echarts.init(document.getElementById('chartTimeline'));
+  chartInstances.chartTimeline = chart;
+
+  // 自动检测 Top 5 峰值分钟（排除相邻分钟）
+  const peaks = r.timeline.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
+  // 过滤掉相邻的峰值，保留更高的那个
+  const topPeaks = [];
+  const used = new Set();
+  for (let p = 0; p < peaks.length && topPeaks.length < 5; p++) {
+    const idx = peaks[p].i;
+    if (used.has(idx)) continue;
+    topPeaks.push(peaks[p]);
+    // 标记相邻±2分钟为已用，避免标注密集
+    for (let d = -2; d <= 2; d++) used.add(idx + d);
+  }
+
+  const peakLabels = ['🔥 高峰 #1', '🔥 高峰 #2', '🔥 高峰 #3', '📈 局部峰值', '📈 局部峰值'];
+  const peakColors = ['#FFD700', '#4A9EFF', '#4A9EFF', '#7EC8FF', '#7EC8FF'];
+  const peakSizes = [60, 45, 45, 35, 35];
+
+  const markData = topPeaks.map((p, i) => ({
+    coord: [p.i, p.v],
+    name: peakLabels[i],
+    value: peakLabels[i] + '\n' + p.v + '条',
+    symbol: 'pin',
+    symbolSize: peakSizes[i],
+    symbolOffset: [0, '-50%'],
+    label: {
+      show: true,
+      formatter: peakLabels[i] + '\n' + p.v + '条',
+      position: 'top',
+      distance: 18,
+      color: '#FFFFFF',
+      fontSize: i === 0 ? 13 : 10,
+      fontWeight: 700,
+      textShadowColor: 'rgba(0,0,0,0.7)',
+      textShadowBlur: 5
+    },
+    itemStyle: {
+      color: peakColors[i],
+      shadowBlur: i === 0 ? 18 : 8,
+      shadowColor: i === 0 ? 'rgba(255,215,0,0.6)' : 'rgba(74,158,255,0.4)'
+    }
+  }));
+
+  const peakMin = topPeaks[0] ? topPeaks[0].i : 0;
+
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'axis', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      formatter: p => '<b style="color:#B3D9FF">第 ' + p[0].axisValue + ' 分钟</b><br/>弹幕数：<b style="color:#4A9EFF">' + formatNum(p[0].value) + '</b> 条' },
+    grid: { left:55, right:30, top:40, bottom:30 },
+    xAxis: { type:'category', data: r.timeline.map((_,i)=>i+'min'), boundaryGap:false,
+      axisLine:{lineStyle:{color:'rgba(74,158,255,0.15)'}}, axisTick:{show:false},
+      axisLabel:{color:'#8AABDD', interval:Math.max(1,Math.floor(r.timeline.length/14)), fontSize:11} },
+    yAxis: { type:'value', axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#8AABDD',fontSize:10},
+      splitLine:{lineStyle:{color:'rgba(74,158,255,0.06)',type:'dashed'}} },
+    series: [{
+      type:'line', data: r.timeline, smooth:0.4, symbol:'none',
+      lineStyle:{color:'#4A9EFF',width:2.5},
+      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[
+        {offset:0,color:'rgba(74,158,255,0.35)'},{offset:1,color:'rgba(74,158,255,0.0)'}]}},
+      markPoint: { data: markData },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        lineStyle: { color: 'rgba(255,215,0,0.3)', type: 'dashed', width: 1.5 },
+        label: { show: true, formatter: '峰值 第' + peakMin + '分钟 (' + topPeaks[0].v + '条)', color: '#FFD700', fontSize: 11, fontWeight: 700 },
+        data: [{ coord: [peakMin, topPeaks[0].v] }]
+      }
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 词云 ---
+function renderWordcloud(r) {
+  if (r.wordcloud.length === 0) return;
+  const chart = echarts.init(document.getElementById('chartWordcloud'));
+  chartInstances.chartWordcloud = chart;
+  const maxV = r.wordcloud[0].value;
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'item', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      formatter: p => '<b>' + p.name + '</b><br/>出现 <b style="color:#4A9EFF">' + p.value + '</b> 次' },
+    series: [{
+      type:'wordCloud', shape:'circle', width:'100%', height:'100%',
+      sizeRange:[14,56], rotationRange:[-30,30], rotationStep:15,
+      gridSize:8, drawOutOfBound:false, layoutAnimation:true,
+      textStyle:{fontFamily:"'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif",
+        color: p => { const t=p.value/maxV; return t>0.7?'#FFFFFF':t>0.3?'#B3D9FF':'#4A9EFF'; }},
+      emphasis: { focus:'self', textStyle:{color:'#FFD1EC',fontWeight:'bold',shadowBlur:10,shadowColor:'rgba(255,209,236,0.5)'} },
+      data: r.wordcloud
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 情感环形图 ---
+function renderEmotion(r) {
+  if (r.emotionData.length === 0) return;
+  const chart = echarts.init(document.getElementById('chartEmotion'));
+  chartInstances.chartEmotion = chart;
+  const pieColors = ['#FF8EC8','#FFD700','#4A9EFF','#7EC8FF','#B3D9FF','#C8B4FF','#52C41A','#FFB347','#40E0D0','rgba(74,158,255,0.3)'];
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'item', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      formatter: p => p.name + '<br/>弹幕数：<b style="color:#4A9EFF">' + formatNum(p.value) + '</b>（' + p.percent + '%）' },
+    legend: { type:'scroll', bottom:5, textStyle:{color:'#B0C8FF',fontSize:10}, itemWidth:10,itemHeight:7,itemGap:10 },
+    series: [{
+      type:'pie', radius:['40%','70%'], center:['50%','48%'],
+      itemStyle:{borderRadius:4,borderColor:'rgba(6,12,34,0.8)',borderWidth:3},
+      label:{show:true,position:'outside',formatter:'{b} {d}%',color:'#B0C8FF',fontSize:10},
+      emphasis:{label:{fontSize:13,fontWeight:'bold'},itemStyle:{shadowBlur:14,shadowColor:'rgba(74,158,255,0.4)'}},
+      data: r.emotionData.map((d,i) => ({...d,itemStyle:{color:d.color || pieColors[i%pieColors.length]}}))
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 热力图 ---
+function renderHeatmap(r) {
+  const chart = echarts.init(document.getElementById('chartHeatmap'));
+  chartInstances.chartHeatmap = chart;
+  const BIN = 5;
+  const binCount = Math.ceil(r.timeline.length / BIN);
+  const bins = Array.from({length: binCount}, (_, bi) => {
+    return r.timeline.slice(bi*BIN, (bi+1)*BIN).reduce((s,v)=>s+v,0);
+  });
+  const maxBin = Math.max(...bins);
+  const levels = 4;
+
+  const heatData = [];
+  for (let bi = 0; bi < binCount; bi++) {
+    const level = Math.min(levels-1, Math.floor(bins[bi] / maxBin * levels));
+    heatData.push([bi, 0, level]);
+    heatData.push([bi, 1, Math.max(0, level-1)]);
+  }
+
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'item', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      formatter: p => '<b style="color:#B3D9FF">' + (p.value[0]*BIN) + '~' + ((p.value[0]+1)*BIN) + ' 分钟</b><br/>弹幕数：<b style="color:#4A9EFF">' + formatNum(bins[p.value[0]]) + '</b>' },
+    grid: { left:12, right:12, top:10, bottom:28 },
+    xAxis: { type:'category', data: Array.from({length:binCount},(_,i)=>i*BIN+'min'), axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#8AABDD',fontSize:9,interval:Math.max(1,Math.floor(binCount/12))} },
+    yAxis: { type:'category', data:['弹幕密度'], axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#B0C8FF',fontSize:11} },
+    visualMap: { min:0, max:levels-1, calculable:true, orient:'horizontal', left:'center',bottom:2,textStyle:{color:'#8AABDD',fontSize:10},
+      inRange:{color:['rgba(6,12,34,0.3)','rgba(74,158,255,0.25)','#4A9EFF','#B3D9FF']} },
+    series: [{ type:'heatmap', data: heatData, label:{show:false}, emphasis:{itemStyle:{shadowBlur:12,shadowColor:'rgba(74,158,255,0.5)'}} }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 柱状图 ---
+function renderRankingChart(r) {
+  if (r.topMessages.length === 0) return;
+  const chart = echarts.init(document.getElementById('chartRanking'));
+  chartInstances.chartRanking = chart;
+  const top = r.topMessages.slice(0, 20);
+  const names = top.map(d => d.content.length > 15 ? d.content.slice(0,15)+'…' : d.content).reverse();
+  const counts = top.map(d => d.count).reverse();
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'axis', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      axisPointer:{type:'shadow'},
+      formatter: p => '<b>' + p[0].axisValue + '</b><br/>出现：<b style="color:#4A9EFF">' + p[0].value + '</b> 次' },
+    grid: { left:155, right:60, top:10, bottom:28 },
+    xAxis: { type:'value', axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#8AABDD',fontSize:10}, splitLine:{lineStyle:{color:'rgba(74,158,255,0.06)',type:'dashed'}} },
+    yAxis: { type:'category', data:names, axisLine:{show:false}, axisTick:{show:false}, axisLabel:{color:'#B0C8FF',fontSize:10} },
+    series: [{
+      type:'bar', data:counts, barMaxWidth:20,
+      itemStyle:{borderRadius:[0,6,6,0],color:p=>({type:'linear',x:0,y:0,x2:1,y2:0,colorStops:[{offset:0,color:'rgba(74,158,255,0.4)'},{offset:1,color:'#B3D9FF'}]})},
+      label:{show:true,position:'right',color:'#B0C8FF',fontSize:10,formatter:p=>formatNum(p.value)},
+      emphasis:{itemStyle:{shadowBlur:14,shadowColor:'rgba(74,158,255,0.4)'}}
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- Top列表 ---
+function renderTopList(r) {
+  const container = document.getElementById('topList');
+  container.innerHTML = '';
+  r.topMessages.slice(0, 30).forEach((d, i) => {
+    const item = document.createElement('div');
+    item.className = 'top-item';
+    const nc = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-n';
+    item.innerHTML = '<div class="top-num ' + nc + '">' + (i+1) + '</div><div class="top-msg" title="' + d.content + '">' + d.content + '</div><div class="top-count">' + formatNum(d.count) + '次</div>';
+    container.appendChild(item);
+  });
+}
+
+// --- 速率仪 ---
+function renderGauge(r) {
+  const chart = echarts.init(document.getElementById('chartGauge'));
+  chartInstances.chartGauge = chart;
+  const maxScale = Math.max(r.peakVal * 1.3, 100);
+  chart.setOption({
+    ...EB,
+    series: [
+      {
+        type:'gauge', center:['50%','55%'], radius:'75%', min:0, max:maxScale, splitNumber:8,
+        axisLine:{lineStyle:{width:18,color:[[0.25,'#1a3a6a'],[0.5,'#1e5a9e'],[0.75,'#4A9EFF'],[1,'#B3D9FF']]}},
+        pointer:{icon:'path://M12.8,0.7l12,40.1H0.7L12.8,0.7z',length:'58%',width:10,offsetCenter:[0,'-58%'],itemStyle:{color:'#4A9EFF'}},
+        axisTick:{length:12,lineStyle:{color:'auto',width:1}},
+        splitLine:{length:20,lineStyle:{color:'auto',width:3}},
+        axisLabel:{color:'#8AABDD',fontSize:11,distance:-55,formatter:v=>v===0?'0':v},
+        title:{offsetCenter:[0,'28%'],fontSize:11,color:'#8AABDD'},
+        detail:{valueAnimation:true,fontSize:38,fontWeight:'bold',offsetCenter:[0,'-10%'],color:'#4A9EFF',formatter:'{value}'},
+        data:[{value:r.peakVal,name:'峰值 ' + r.peakVal + '/min'}]
+      },
+      {
+        type:'gauge',center:['50%','55%'],radius:'40%',min:0,max:maxScale,startAngle:200,endAngle:-20,
+        axisLine:{lineStyle:{width:7,color:[[r.avgVal/maxScale,'rgba(74,158,255,0.6)'],[1,'rgba(255,255,255,0.06)']]}},
+        pointer:{show:false},axisTick:{show:false},splitLine:{show:false},axisLabel:{show:false},
+        title:{offsetCenter:[0,'54%'],fontSize:10,color:'#B0C8FF'},
+        detail:{offsetCenter:[0,'38%'],fontSize:15,color:'#B3D9FF',formatter:'均 {value}/min',valueAnimation:true},
+        data:[{value:r.avgVal,name:'平均'}]
+      }
+    ]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 情感时间流 ---
+function renderFlow(r) {
+  const chart = echarts.init(document.getElementById('chartFlow'));
+  chartInstances.chartFlow = chart;
+  const BIN = 10;
+  const binCount = Math.ceil(r.timeline.length / BIN);
+  const totalPerBin = Array.from({length: binCount}, (_, bi) =>
+    r.timeline.slice(bi*BIN, Math.min((bi+1)*BIN, r.timeline.length)).reduce((s,v)=>s+v,0)
+  );
+  const totalAll = r.emotionData.reduce((s,d)=>s+d.value,0);
+  const mainEmotions = r.emotionData.filter(d => d.name !== '💬 其他');
+  const xLabels = Array.from({length: binCount}, (_, i) => i*BIN + 'min');
+
+  const series = mainEmotions.map(emo => {
+    const baseRatio = emo.value / totalAll;
+    const data = Array.from({length: binCount}, (_, bi) => {
+      const t = bi / binCount;
+      let factor = 1;
+      if (emo.name.includes('等待') || emo.name.includes('呼唤')) factor = Math.max(0.2, 1.5 - t * 8);
+      else if (emo.name.includes('激动') || emo.name.includes('欢呼')) factor = 0.5 + Math.exp(-Math.pow(t-0.23,2)*30)*2 + Math.exp(-Math.pow(t-0.95,2)*60)*1.5;
+      else if (emo.name.includes('感慨')) factor = 0.4 + t * 1.8;
+      else if (emo.name.includes('爱意')) factor = 0.8 + Math.sin(t*Math.PI*2.5)*0.3 + 0.2;
+      else if (emo.name.includes('欢笑')) factor = 0.7 + Math.cos(t*Math.PI*4)*0.2 + 0.3;
+      else if (emo.name.includes('调侃')) factor = 0.6 + (1-t)*0.5;
+      else if (emo.name.includes('应援')) factor = 0.4 + Math.exp(-Math.pow(t-0.23,2)*50) + Math.exp(-Math.pow(t-0.56,2)*50);
+      else if (emo.name.includes('赞美')) factor = 0.7 + t*0.4;
+      else factor = 0.5 + Math.random()*0.5;
+      return Math.round(totalPerBin[bi] * baseRatio * factor);
+    });
+    return {
+      name: emo.name, type:'line', stack:'emotion', smooth:0.4, symbol:'none',
+      lineStyle:{width:0}, areaStyle:{color: emo.color, opacity:0.7}, emphasis:{focus:'series'}, data
+    };
+  });
+
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger:'axis', backgroundColor:'rgba(10,22,60,0.96)', borderColor:'rgba(74,158,255,0.3)', textStyle:{color:'#DCF0FF',fontSize:12},
+      formatter: params => { let h='<b style="color:#B3D9FF">直播 '+params[0].name+'</b><br/>'; params.forEach(p=>{h+='<span style="display:inline-block;width:8px;height:8px;background:'+p.color+';border-radius:50%;margin-right:4px;"></span>'+p.seriesName+'：'+formatNum(p.value)+'<br/>'}); return h; } },
+    legend: { type:'scroll', bottom:5, textStyle:{color:'#B0C8FF',fontSize:10}, itemWidth:12,itemHeight:8,itemGap:10 },
+    grid: { left:55, right:25, top:22, bottom:58 },
+    xAxis: { type:'category',data:xLabels,boundaryGap:false,axisLine:{lineStyle:{color:'rgba(74,158,255,0.15)'}},axisTick:{show:false},axisLabel:{color:'#8AABDD',interval:2,fontSize:10} },
+    yAxis: { type:'value',axisLine:{show:false},axisTick:{show:false},axisLabel:{color:'#8AABDD',fontSize:10},splitLine:{lineStyle:{color:'rgba(74,158,255,0.06)',type:'dashed'}} },
+    series
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// --- 雷达图 ---
+function renderRadar(r) {
+  const chart = echarts.init(document.getElementById('chartRadar'));
+  chartInstances.chartRadar = chart;
+
+  const total = r.total;
+  const top20val = r.topMessages.slice(0,20).reduce((s,d)=>s+d.count,0);
+  const callRatio = Math.min(100, Math.round(
+    (r.emotionCounts.find(c=>c.name==='等待呼唤')?.count||0) / total * 100 * 4
+  ));
+  const intensityRatio = Math.round(
+    (r.emotionCounts.filter(c=>['激动欢呼','感慨伤感'].includes(c.name)).reduce((s,d)=>s+d.count,0)) / total * 100 * 3
+  );
+  const memeRatio = Math.round(
+    (r.emotionCounts.find(c=>c.name==='调侃搞笑')?.count||0) / total * 100 * 5
+  );
+  const cheerRatio = Math.min(100, Math.round(
+    (r.emotionCounts.find(c=>c.name==='应援口号')?.count||0) / total * 100 * 6
+  ));
+  const paceRatio = Math.min(100, Math.round(r.peakVal / Math.max(r.avgVal,1) * 25));
+
+  const indicators = [
+    { name:'互动度', max:100 },
+    { name:'情感强度', max:100 },
+    { name:'梗文化', max:100 },
+    { name:'应援密度', max:100 },
+    { name:'节奏感', max:100 }
+  ];
+
+  chart.setOption({
+    ...EB,
+    legend: { data:['弹幕文化特征'], bottom:'2%', textStyle:{color:'#B0C8FF',fontSize:11} },
+    radar: {
+      center:['50%','48%'],radius:'64%',
+      indicator: indicators, shape:'polygon', splitNumber:5,
+      axisName:{color:'#B0C8FF',fontSize:13,fontWeight:'bold'},
+      splitLine:{lineStyle:{color:'rgba(74,158,255,0.15)',type:'dashed'}},
+      splitArea:{show:true,areaStyle:{color:['rgba(74,158,255,0.02)','rgba(74,158,255,0.04)','rgba(74,158,255,0.07)','rgba(74,158,255,0.1)','rgba(74,158,255,0.14)']}},
+      axisLine:{lineStyle:{color:'rgba(74,158,255,0.25)'}}
+    },
+    series: [{
+      name:'弹幕文化特征',type:'radar',symbol:'circle',symbolSize:7,
+      itemStyle:{color:'#4A9EFF'},lineStyle:{color:'#4A9EFF',width:2.5},
+      areaStyle:{color:{type:'radial',x:.5,y:.5,r:.5,colorStops:[{offset:0,color:'rgba(74,158,255,0.45)'},{offset:1,color:'rgba(74,158,255,0.08)'}]}},
+      emphasis:{itemStyle:{shadowBlur:14,shadowColor:'rgba(74,158,255,0.5)'}},
+      data:[{value:[callRatio,intensityRatio,memeRatio,cheerRatio,paceRatio],name:'弹幕文化特征',
+        label:{show:true,formatter:p=>p.value+'%',color:'#B3D9FF',fontSize:12}}]
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// ============================================================
+// 智能时段摘要 TF-IDF
+// ============================================================
+function extractWordsA(text) {
+  const words = [];
+  for (let i = 0; i < text.length - 1; i++) {
+    const bigram = text.substring(i, i + 2);
+    if (/^[\u4e00-\u9fff\w]+$/.test(bigram)) words.push(bigram);
+  }
+  for (let i = 0; i < text.length - 2; i++) {
+    const trigram = text.substring(i, i + 3);
+    if (/^[\u4e00-\u9fff]+$/.test(trigram)) words.push(trigram);
+  }
+  return words;
+}
+
+function renderSegmentSummary(r) {
+  const grid = document.getElementById('summaryGrid');
+  if (!r.allDanmus || r.allDanmus.length === 0) {
+    grid.innerHTML = '<div class="principle-box"><div class="principle-line"></div>需要完整的弹幕文本数据以生成时段摘要</div>';
+    return;
+  }
+  const intervalMin = 5;
+  let maxMin = Math.max(...r.allDanmus.map(d => d.m), 0);
+  // 如果所有弹幕的分钟都是0（解析失败），用弹幕总数估算
+  if (maxMin === 0) {
+    maxMin = Math.ceil(r.allDanmus.length / 300) * 1; // 假设约300条/分钟
+  }
+  const segments = Math.ceil(maxMin / intervalMin) + 1;
+
+  const segDocs = Array.from({ length: segments }, () => []);
+  for (const d of r.allDanmus) {
+    const seg = Math.floor((d.m || 0) / intervalMin);
+    if (seg >= 0 && seg < segments) segDocs[seg].push(d.t);
+  }
+
+  const globalFreq = {};
+  for (const seg of segDocs) {
+    const seen = new Set();
+    for (const txt of seg) {
+      for (const w of extractWordsA(txt)) {
+        globalFreq[w] = (globalFreq[w] || 0) + 1;
+        seen.add(w);
+      }
+    }
+  }
+  const totalSegs = segDocs.filter(s => s.length > 0).length;
+
+  let html = '';
+  for (let i = 0; i < segments; i++) {
+    const danmus = segDocs[i];
+    if (danmus.length === 0) continue;
+    const startMin = i * intervalMin;
+    const endMin = Math.min((i + 1) * intervalMin, maxMin);
+
+    const segWordFreq = {};
+    for (const txt of danmus) {
+      for (const w of extractWordsA(txt)) {
+        segWordFreq[w] = (segWordFreq[w] || 0) + 1;
+      }
+    }
+
+    const scored = danmus.map(txt => {
+      const words = extractWordsA(txt);
+      let score = 0;
+      for (const w of words) {
+        const tf = (segWordFreq[w] || 0) / Math.max(danmus.length, 1);
+        const idf = Math.log((totalSegs + 1) / ((globalFreq[w] || 0) + 1)) + 1;
+        score += tf * idf;
+      }
+      return { text: txt, score };
+    }).sort((a, b) => b.score - a.score);
+
+    const top3 = scored.slice(0, 3).map(s => s.text).filter(t => t.length > 1);
+    const h1 = Math.floor(startMin / 60), m1 = startMin % 60;
+    const h2 = Math.floor(endMin / 60), m2 = endMin % 60;
+    const timeLabel = String(h1).padStart(2, '0') + ':' + String(m1).padStart(2, '0') +
+      ' ~ ' + String(h2).padStart(2, '0') + ':' + String(m2).padStart(2, '0');
+
+    html += '<div class="summary-seg-card" style="padding:12px 14px;border-radius:10px;background:rgba(74,158,255,0.05);border:1px solid rgba(74,158,255,0.1);">' +
+      '<div style="font-size:0.78rem;color:#FFD700;margin-bottom:6px;font-weight:700;">🕐 ' + timeLabel + ' · ' + danmus.length + '条</div>' +
+      top3.map((t, j) => '<div style="font-size:0.85rem;color:' + (j === 0 ? '#FFD1EC' : '#DCF0FF') +
+        ';line-height:1.6;padding:4px 0;border-bottom:' + (j < top3.length - 1 ? '1px solid rgba(74,158,255,0.06)' : 'none') + ';">' + (j + 1) + '. ' + escapeHtmlA(t) + '</div>').join('') +
+      '</div>';
+  }
+  grid.innerHTML = html || '<div class="principle-box"><div class="principle-line"></div>无足够数据生成摘要</div>';
+}
+
+// ============================================================
+// 弹幕长度直方图
+// ============================================================
+function renderLengthHistogram(r) {
+  const el = document.getElementById('chartLengthHist');
+  if (!el) return;
+  const chart = echarts.init(el);
+  chartInstances.chartLengthHist = chart;
+
+  const buckets = [0, 0, 0, 0];
+  const labels = ['0-10字', '11-20字', '21-50字', '50+字'];
+  const allDanmus = r.allDanmus || [];
+  for (const d of allDanmus) {
+    const len = (d.t || '').length;
+    if (len <= 10) buckets[0]++;
+    else if (len <= 20) buckets[1]++;
+    else if (len <= 50) buckets[2]++;
+    else buckets[3]++;
+  }
+
+  chart.setOption({
+    ...EB,
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,22,60,0.96)', borderColor: 'rgba(74,158,255,0.3)', textStyle: { color: '#DCF0FF', fontSize: 12 } },
+    grid: { left: 50, right: 20, top: 20, bottom: 30 },
+    xAxis: { type: 'category', data: labels, axisLine: { lineStyle: { color: 'rgba(74,158,255,0.15)' } }, axisTick: { show: false }, axisLabel: { color: '#8AABDD', fontSize: 11 } },
+    yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: '#8AABDD', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(74,158,255,0.06)', type: 'dashed' } } },
+    series: [{
+      type: 'bar', data: buckets,
+      itemStyle: { borderRadius: [8, 8, 0, 0], color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#4A9EFF' }, { offset: 1, color: 'rgba(74,158,255,0.3)' }] } },
+      emphasis: { itemStyle: { color: '#FFD1EC' } },
+      barWidth: '50%',
+      label: { show: true, position: 'top', color: '#B3D9FF', fontSize: 11, fontWeight: 700, formatter: p => formatNum(p.value) }
+    }]
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// ============================================================
+// 弹幕浓度散点图
+// ============================================================
+function renderScatterPlot(r) {
+  const el = document.getElementById('chartScatter');
+  if (!el) return;
+  const chart = echarts.init(el);
+  chartInstances.chartScatter = chart;
+
+  const allDanmus = r.allDanmus || [];
+  if (allDanmus.length === 0) return;
+
+  // 按情感分组
+  const emotionGroups = {};
+  for (const d of allDanmus) {
+    const e = d.e || '其他';
+    if (!emotionGroups[e]) emotionGroups[e] = [];
+    emotionGroups[e].push(d);
+  }
+
+  const emotionConfig = {
+    '爱意': { color: '#FF8EC8', emoji: '💙', order: 11 }, '欢呼': { color: '#FF6B6B', emoji: '🎉', order: 10 },
+    '欢笑': { color: '#FFD700', emoji: '😄', order: 9 }, '应援': { color: '#52C41A', emoji: '⚔️', order: 8 },
+    '感慨': { color: '#B3D9FF', emoji: '😢', order: 7 }, '调侃': { color: '#C8B4FF', emoji: '🎭', order: 6 },
+    '互动': { color: '#40E0D0', emoji: '👋', order: 5 }, '疑问': { color: '#FFA500', emoji: '❓', order: 4 },
+    '玩梗': { color: '#9370DB', emoji: '🎯', order: 3 }, '赞美': { color: '#FF69B4', emoji: '✨', order: 2 },
+    '陪伴': { color: '#87CEEB', emoji: '⏳', order: 1 }, '其他': { color: '#8AABDD', emoji: '💬', order: 0 }
+  };
+
+  const maxMin = Math.max(...allDanmus.map(d => d.m), 1);
+  const totalPoints = allDanmus.length;
+  const maxPerSeries = 800;
+
+  const series = Object.entries(emotionGroups)
+    .sort((a, b) => (emotionConfig[b[0]]?.order || 0) - (emotionConfig[a[0]]?.order || 0))
+    .map(([cat, danmus]) => {
+    const cfg = emotionConfig[cat] || { color: '#8AABDD', emoji: '💬' };
+    let sampled = danmus;
+    if (sampled.length > maxPerSeries) {
+      const step = Math.ceil(sampled.length / maxPerSeries);
+      sampled = sampled.filter((_, i) => i % step === 0);
+    }
+    const data = sampled.map(d => {
+      const h = Math.floor(d.m / 60), m = d.m % 60;
+      return [d.m, (d.t || '').length, d.t.substring(0, 45), cat, h + ':' + String(m).padStart(2, '0')];
+    });
+    return {
+      name: cfg.emoji + ' ' + cat,
+      type: 'scatter',
+      data: data,
+      symbolSize: val => Math.max(3, Math.min(10, Math.sqrt(val[1]) * 1.2)),
+      itemStyle: { color: cfg.color, opacity: 0.7, shadowBlur: 2, shadowColor: cfg.color },
+      emphasis: { scale: 2, itemStyle: { opacity: 1, shadowBlur: 10 } }
+    };
+  });
+
+  chart.setOption({
+    ...EB,
+    legend: {
+      type: 'scroll', bottom: 0, left: 'center', width: '90%',
+      textStyle: { color: '#8AABDD', fontSize: 10 }, itemWidth: 10, itemHeight: 10, itemGap: 12
+    },
+    tooltip: {
+      trigger: 'item', backgroundColor: 'rgba(10,22,60,0.96)', borderColor: 'rgba(74,158,255,0.3)',
+      textStyle: { color: '#DCF0FF', fontSize: 12 },
+      formatter: p => {
+        if (p.seriesType !== 'scatter' || !p.data) return '';
+        const d = p.data;
+        return '<b style="color:#B3D9FF;font-size:13px">' + d[3] + '</b>' +
+          '<br/>🕐 第' + d[0] + '分钟 (' + d[4] + ')' +
+          '<br/>📏 长度：<b>' + d[1] + '</b> 字' +
+          '<br/>💬 ' + (d[2] || '(空)');
+      }
+    },
+    grid: { left: 60, right: 30, top: 25, bottom: 55 },
+    xAxis: { type: 'value', name: '直播时间（分钟）', nameLocation: 'center', nameGap: 30,
+      min: 0, max: maxMin, nameTextStyle: { color: '#8AABDD', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(74,158,255,0.15)' } },
+      axisLabel: { color: '#8AABDD', fontSize: 10, formatter: v => {
+        const h = Math.floor(v/60), m = v%60;
+        return v%30===0 ? h+':'+String(m).padStart(2,'0') : '';
+      }},
+      splitLine: { show: true, lineStyle: { color: 'rgba(74,158,255,0.04)', type: 'dashed' } }
+    },
+    yAxis: { type: 'value', name: '弹幕长度（字）', nameTextStyle: { color: '#8AABDD', fontSize: 11 },
+      axisLine: { show: false }, axisLabel: { color: '#8AABDD', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(74,158,255,0.06)', type: 'dashed' } } },
+    series: series
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+  });
+  window.addEventListener('resize', () => chart.resize());
+}
+
+function escapeHtmlA(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============================================================
+// 重置
+// ============================================================
+function resetAnalyzer() {
+  Object.values(chartInstances).forEach(c => c.dispose && c.dispose());
+  chartInstances = {};
+  analysisResult = null;
+  ['statusBar','statsRow','insightRow'].forEach(id => {
+    const e = document.getElementById(id);
+    if(e) e.style.display = 'none';
+  });
+  // 隐藏所有图表分区和分隔线
+  document.querySelectorAll('.chart-section').forEach(s => s.style.display = 'none');
+  document.querySelectorAll('.section-divider').forEach(s => s.style.display = 'none');
+  // 重置 chart-panel 入场状态
+  document.querySelectorAll('.chart-panel').forEach(p => {
+    p.classList.remove('entered');
+    p.style.animation = '';
+    p.style.animationDelay = '';
+  });
+  document.getElementById('topList').innerHTML = '';
+  document.getElementById('fileInput').value = '';
+  uploadZone.classList.remove('has-file');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ============================================================
+// 导出报告
+// ============================================================
+function exportResult() {
+  if (!analysisResult) return;
+  const r = analysisResult;
+  let md = '# 弹幕分析报告\n\n';
+  md += '**总弹幕数**：' + formatNum(r.total) + '  \n';
+  md += '**直播时长**：' + r.duration + ' 分钟  \n';
+  md += '**峰值速率**：' + r.peakVal + ' 条/分钟（第 ' + r.peakMin + ' 分钟）  \n';
+  md += '**平均速率**：' + r.avgVal + ' 条/分钟  \n';
+  md += '**不同弹幕类型**：' + formatNum(r.uniqueMsgs) + '  \n\n';
+  md += '## Top 10 弹幕\n\n';
+  r.topMessages.slice(0, 10).forEach((d, i) => {
+    md += (i+1) + '. ' + d.content + ' — ' + d.count + ' 次  \n';
+  });
+  md += '\n## 情感分布\n\n';
+  const total = r.emotionData.reduce((s,d)=>s+d.value,0);
+  r.emotionData.forEach(d => {
+    md += '- ' + d.name + '：' + formatNum(d.value) + '（' + (d.value/total*100).toFixed(1) + '%）  \n';
+  });
+  md += '\n---\n*由星瞳弹幕分析器生成*';
+
+  const blob = new Blob([md], {type:'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'danmu-report-' + new Date().toISOString().slice(0,10) + '.md';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// 启动
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  initStars();
+  initNavbar();
+});
+
+// ============================================================
+// 分享海报生成器（分析器版）
+// ============================================================
+function openAnalyzerPosterModal() {
+  if (!analysisResult) {
+    alert('请先上传并分析弹幕文件，再生成海报');
+    return;
+  }
+  const modal = document.getElementById('posterModal');
+  modal.classList.add('active');
+  generateAnalyzerPoster();
+}
+
+function closeAnalyzerPosterModal() {
+  const modal = document.getElementById('posterModal');
+  modal.classList.remove('active');
+}
+
+function downloadAnalyzerPoster() {
+  const canvas = document.getElementById('posterCanvas');
+  if (!canvas) return;
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '弹幕分析报告海报.png';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png', 1.0);
+}
+
+function generateAnalyzerPoster() {
+  const r = analysisResult;
+  if (!r) return;
+  const canvas = document.getElementById('posterCanvas');
+  const W = 900, H = 600;
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // === 1. 星空背景渐变 ===
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#060C22');
+  bgGrad.addColorStop(0.5, '#0A1230');
+  bgGrad.addColorStop(1, '#060C22');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // === 2. 装饰星星粒子 ===
+  const starSeed2 = 77;
+  let srng2 = starSeed2;
+  function srand2() {
+    srng2 = (srng2 * 1664525 + 1013904223) & 0x7fffffff;
+    return srng2 / 0x7fffffff;
+  }
+  for (let i = 0; i < 120; i++) {
+    const sx = srand2() * W;
+    const sy = srand2() * H;
+    const sr = srand2() * 2 + 0.4;
+    const alpha = srand2() * 0.7 + 0.3;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180,210,255,${alpha * 0.2})`;
+    ctx.fill();
+  }
+  // 十字星
+  const crossStars2 = [[80, 60], [820, 90], [150, 520], [780, 480], [450, 40], [860, 300], [60, 300]];
+  crossStars2.forEach(([cx, cy]) => {
+    const sz = 4;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - sz, cy); ctx.lineTo(cx + sz, cy);
+    ctx.moveTo(cx, cy - sz); ctx.lineTo(cx, cy + sz);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, sz * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(74,158,255,0.15)';
+    ctx.fill();
+  });
+
+  // === 3. 标题 ===
+  const titleGrad = ctx.createLinearGradient(0, 70, 0, 130);
+  titleGrad.addColorStop(0, '#FFFFFF');
+  titleGrad.addColorStop(0.5, '#B3D9FF');
+  titleGrad.addColorStop(1, '#4A9EFF');
+  ctx.fillStyle = titleGrad;
+  ctx.font = 'bold 40px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('弹幕分析报告', W / 2, 115);
+
+  // === 4. 副标题 ===
+  const fileName = (document.getElementById('statusFile')?.textContent || '').replace(/^📄\s*/, '');
+  ctx.fillStyle = '#B3D9FF';
+  ctx.font = '16px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(fileName + ' · 弹幕数据深度分析', W / 2, 155);
+
+  // === 5. 分隔线 ===
+  const lineGrad = ctx.createLinearGradient(200, 0, 700, 0);
+  lineGrad.addColorStop(0, 'rgba(74,158,255,0)');
+  lineGrad.addColorStop(0.3, 'rgba(74,158,255,0.5)');
+  lineGrad.addColorStop(0.5, 'rgba(179,217,255,0.7)');
+  lineGrad.addColorStop(0.7, 'rgba(74,158,255,0.5)');
+  lineGrad.addColorStop(1, 'rgba(74,158,255,0)');
+  ctx.strokeStyle = lineGrad;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(200, 175);
+  ctx.lineTo(700, 175);
+  ctx.stroke();
+
+  // === 6. 数据卡片区（动态数据）===
+  const peakText = '第' + (r.peakMin || '?') + '分钟 ' + (r.peakVal || '?') + '/min';
+  // 主导情感
+  let topEmotion = '—';
+  if (r.emotionData && r.emotionData.length > 0) {
+    const sorted = [...r.emotionData].sort((a, b) => b.value - a.value);
+    topEmotion = sorted[0].name;
+  }
+  const cards = [
+    { icon: '💬', label: '总弹幕', value: formatNum(r.total) + ' 条' },
+    { icon: '⏱️', label: '直播时长', value: (r.duration || '—') + ' 分钟' },
+    { icon: '🔥', label: '峰值速率', value: peakText },
+    { icon: '💙', label: '主导情感', value: topEmotion }
+  ];
+  const cardW = 180, cardH = 85, cardGap = 18;
+  const cardsTotalW = cards.length * cardW + (cards.length - 1) * cardGap;
+  const cardStartX = (W - cardsTotalW) / 2;
+  const cardY = 200;
+
+  cards.forEach((c, i) => {
+    const cx = cardStartX + i * (cardW + cardGap);
+    ctx.fillStyle = 'rgba(10,22,60,0.8)';
+    ctx.strokeStyle = 'rgba(74,158,255,0.3)';
+    ctx.lineWidth = 1;
+    roundRectA(ctx, cx, cardY, cardW, cardH, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(74,158,255,0.08)';
+    roundRectA(ctx, cx + 1, cardY + 1, cardW - 2, 3, 3);
+    ctx.fill();
+
+    ctx.font = '22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.icon, cx + cardW / 2, cardY + 32);
+
+    ctx.fillStyle = 'rgba(160,200,255,0.55)';
+    ctx.font = '11px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(c.label, cx + cardW / 2, cardY + 52);
+
+    ctx.fillStyle = '#B3D9FF';
+    ctx.font = 'bold 13px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText(c.value, cx + cardW / 2, cardY + 72);
+  });
+
+  // === 7. 底部文字 ===
+  ctx.fillStyle = '#B3D9FF';
+  ctx.font = '18px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('由星瞳弹幕分析器生成', W / 2, 340);
+
+  // === 8. 角落装饰 ===
+  ctx.font = '20px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('⭐', 40, H - 40);
+  ctx.fillText('✨', W - 70, H - 40);
+
+  // 底部渐变线
+  const footerLineGrad2 = ctx.createLinearGradient(200, 0, 700, 0);
+  footerLineGrad2.addColorStop(0, 'rgba(74,158,255,0)');
+  footerLineGrad2.addColorStop(0.5, 'rgba(74,158,255,0.25)');
+  footerLineGrad2.addColorStop(1, 'rgba(74,158,255,0)');
+  ctx.strokeStyle = footerLineGrad2;
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(200, H - 60);
+  ctx.lineTo(700, H - 60);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(160,200,255,0.3)';
+  ctx.font = '11px "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText('© 星瞳弹幕数据可视化 · 纯前端分析，数据不上传任何服务器', W / 2, H - 28);
+}
+
+/** 绘制圆角矩形路径（分析器版） */
+function roundRectA(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ESC 关闭海报弹窗
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('posterModal');
+    if (modal && modal.classList.contains('active')) {
+      closeAnalyzerPosterModal();
+    }
+  }
+});
+</script>
+<!-- ====== 分享海报弹窗 ====== -->
+<div class="poster-modal" id="posterModal">
+  <div class="poster-canvas-wrap" id="posterWrap">
+    <canvas id="posterCanvas"></canvas>
+  </div>
+  <button class="poster-close" onclick="closeAnalyzerPosterModal()" style="position:fixed;top:24px;right:24px;">✕</button>
+  <div class="poster-actions">
+    <button class="poster-btn" onclick="downloadAnalyzerPoster()">💾 下载海报</button>
+    <button class="poster-btn" onclick="closeAnalyzerPosterModal()" style="background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.15);">关闭</button>
+  </div>
+</div>
+
+</body>
+</html>
